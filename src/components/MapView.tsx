@@ -1,6 +1,64 @@
-import { useEffect, useRef } from 'react';
-import { MapPin, Layers } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  Circle,
+  useMap,
+  useMapEvents,
+} from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { Layers, Satellite, Map as MapIcon, Mountain } from 'lucide-react';
 import type { GeoPoint } from '@/lib/types';
+
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
+
+/** Leaflet's default icon paths break under Vite's bundler — rebind them once. */
+const markerIcon = L.icon({
+  iconUrl,
+  iconRetinaUrl,
+  shadowUrl,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+export type BaseLayerId = 'satellite' | 'streets' | 'terrain';
+
+const BASE_LAYERS: Record<
+  BaseLayerId,
+  { label: string; icon: typeof Satellite; url: string; attribution: string; maxZoom: number }
+> = {
+  satellite: {
+    label: 'Satellite',
+    icon: Satellite,
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution:
+      'Imagery &copy; <a href="https://www.esri.com/">Esri</a>, Maxar, Earthstar Geographics, GIS User Community',
+    maxZoom: 19,
+  },
+  streets: {
+    label: 'Streets',
+    icon: MapIcon,
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+  },
+  terrain: {
+    label: 'Terrain',
+    icon: Mountain,
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    attribution:
+      'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)',
+    maxZoom: 17,
+  },
+};
 
 interface MapViewProps {
   point: GeoPoint | null;
@@ -10,14 +68,51 @@ interface MapViewProps {
   /** Visual radius (km) of the flood-risk zone shown around the pin */
   riskRadiusKm?: number;
   riskColor?: string;
+  /** Which base map to show first. Satellite by default. */
+  defaultLayer?: BaseLayerId;
+}
+
+/** Recentres the map whenever the selected point changes. */
+function Recenter({ point, zoom }: { point: GeoPoint | null; zoom: number }) {
+  const map = useMap();
+  const lat = point?.lat;
+  const lng = point?.lng;
+  useEffect(() => {
+    if (lat !== undefined && lng !== undefined) {
+      map.flyTo([lat, lng], zoom, { duration: 0.9 });
+    }
+  }, [lat, lng, zoom, map]);
+  return null;
+}
+
+/** Turns a map click into a picked coordinate. */
+function ClickPicker({ onPick }: { onPick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onPick(+e.latlng.lat.toFixed(6), +e.latlng.wrap().lng.toFixed(6));
+    },
+  });
+  return null;
+}
+
+/** Keeps Leaflet's canvas sized correctly when its container resizes. */
+function ResizeHandler() {
+  const map = useMap();
+  useEffect(() => {
+    const el = map.getContainer();
+    const ro = new ResizeObserver(() => map.invalidateSize());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [map]);
+  return null;
 }
 
 /**
- * Prototype map view — an abstracted, stylized world grid.
+ * Real slippy map (Leaflet + OpenStreetMap / Esri imagery).
  *
- * To swap in a real map later, replace the <canvas>/<svg> body of this
- * component with a <GoogleMap> or <MapContainer> (Leaflet) element and
- * keep the same props surface. The rest of the app does not need changes.
+ * No API key is required for any of the three base layers.
+ * The props surface is unchanged from the earlier prototype, so callers
+ * did not need to change.
  */
 export default function MapView({
   point,
@@ -26,166 +121,122 @@ export default function MapView({
   interactive = false,
   riskRadiusKm = 0,
   riskColor = '#3898C9',
+  defaultLayer = 'satellite',
 }: MapViewProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [layer, setLayer] = useState<BaseLayerId>(defaultLayer);
+  const base = BASE_LAYERS[layer];
 
-  // Draw a stylized topographic grid + water bodies
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-
-    const W = rect.width;
-    const H = rect.height;
-
-    // Ocean gradient
-    const bg = ctx.createLinearGradient(0, 0, 0, H);
-    bg.addColorStop(0, '#0A3B5C');
-    bg.addColorStop(1, '#072A44');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-
-    // Grid lines (lat/lng abstraction)
-    ctx.strokeStyle = 'rgba(155, 176, 201, 0.12)';
-    ctx.lineWidth = 1;
-    const grid = 44;
-    for (let x = 0; x <= W; x += grid) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, H);
-      ctx.stroke();
-    }
-    for (let y = 0; y <= H; y += grid) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
-    }
-
-    // Faux landmasses (deterministic blobs)
-    const blobs = [
-      { x: W * 0.22, y: H * 0.3, r: W * 0.16 },
-      { x: W * 0.68, y: H * 0.4, r: W * 0.2 },
-      { x: W * 0.45, y: H * 0.72, r: W * 0.14 },
-      { x: W * 0.85, y: H * 0.78, r: W * 0.1 },
-    ];
-    blobs.forEach((b) => {
-      const g = ctx.createRadialGradient(b.x, b.y, b.r * 0.2, b.x, b.y, b.r);
-      g.addColorStop(0, 'rgba(45, 82, 120, 0.85)');
-      g.addColorStop(0.7, 'rgba(36, 61, 92, 0.55)');
-      g.addColorStop(1, 'rgba(36, 61, 92, 0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // Rivers / water lines
-    ctx.strokeStyle = 'rgba(56, 152, 201, 0.35)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, H * 0.55);
-    ctx.bezierCurveTo(W * 0.3, H * 0.4, W * 0.5, H * 0.7, W, H * 0.5);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(W * 0.1, H * 0.2);
-    ctx.bezierCurveTo(W * 0.35, H * 0.35, W * 0.4, H * 0.6, W * 0.6, H * 0.85);
-    ctx.stroke();
-  }, []);
-
-  // Map lat/lng → canvas x/y (equirectangular)
-  function project(lat: number, lng: number) {
-    const rect = canvasRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    const x = ((lng + 180) / 360) * rect.width;
-    const y = ((90 - lat) / 180) * rect.height;
-    return { x, y };
-  }
-
-  const pin = point ? project(point.lat, point.lng) : null;
-
-  // risk radius in pixels ~ km/100 of map width (abstract)
-  const radiusPx = riskRadiusKm
-    ? Math.max(18, (riskRadiusKm / 120) * (canvasRef.current?.getBoundingClientRect().width ?? 600))
-    : 0;
-
-  function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!interactive || !onPick) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const lng = (x / rect.width) * 360 - 180;
-    const lat = 90 - (y / rect.height) * 180;
-    onPick(lat, lng);
-  }
+  // Wider view when the user is still choosing; tight view once a risk zone is known.
+  const zoom = riskRadiusKm > 0 ? zoomForRadius(riskRadiusKm) : point ? 11 : 4;
+  // India-wide default view until the user picks somewhere.
+  const lat = point?.lat;
+  const lng = point?.lng;
+  const center = useMemo<[number, number]>(
+    () => (lat !== undefined && lng !== undefined ? [lat, lng] : [20.5937, 78.9629]),
+    [lat, lng],
+  );
 
   return (
     <div className={`relative overflow-hidden rounded-2xl bg-ink-900 ${className}`}>
-      <canvas
-        ref={canvasRef}
-        onClick={handleClick}
-        className={`block h-full w-full ${interactive ? 'cursor-crosshair' : ''}`}
-      />
+      <MapContainer
+        center={center}
+        zoom={zoom}
+        scrollWheelZoom
+        worldCopyJump
+        className="h-full w-full"
+        style={{ background: '#072A44' }}
+      >
+        <TileLayer
+          key={layer}
+          url={base.url}
+          attribution={base.attribution}
+          maxZoom={base.maxZoom}
+        />
 
-      {/* Overlay: layer badge */}
-      <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5 rounded-lg bg-ink-950/70 px-2.5 py-1.5 text-[11px] font-medium text-ink-200 backdrop-blur">
-        <Layers className="h-3.5 w-3.5 text-brand-400" />
-        Prototype map · swap-ready
+        {/* Place labels + roads on top of imagery, which has none of its own */}
+        {layer === 'satellite' && (
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={19}
+          />
+        )}
+
+        <ResizeHandler />
+        <Recenter point={point} zoom={zoom} />
+        {interactive && onPick && <ClickPicker onPick={onPick} />}
+
+        {point && riskRadiusKm > 0 && (
+          <Circle
+            center={[point.lat, point.lng]}
+            radius={riskRadiusKm * 1000}
+            pathOptions={{
+              color: riskColor,
+              weight: 1.5,
+              fillColor: riskColor,
+              fillOpacity: 0.18,
+            }}
+          />
+        )}
+
+        {point && (
+          <Marker position={[point.lat, point.lng]} icon={markerIcon}>
+            <Popup>
+              <span className="font-semibold">{point.label}</span>
+              <br />
+              {point.lat.toFixed(4)}°, {point.lng.toFixed(4)}°
+            </Popup>
+          </Marker>
+        )}
+      </MapContainer>
+
+      {/* Base-layer switcher */}
+      <div className="absolute right-3 top-3 z-[1000] flex flex-col gap-1 rounded-xl bg-ink-950/80 p-1 backdrop-blur">
+        <span className="flex items-center gap-1.5 px-2.5 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">
+          <Layers className="h-3 w-3 text-brand-400" /> Layer
+        </span>
+        {(Object.keys(BASE_LAYERS) as BaseLayerId[]).map((id) => {
+          const opt = BASE_LAYERS[id];
+          const active = id === layer;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setLayer(id)}
+              title={opt.label}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                active ? 'bg-brand-600 text-white' : 'text-ink-300 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <opt.icon className="h-3.5 w-3.5" />
+              {opt.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Overlay: coords */}
+      {/* Coordinate readout */}
       {point && (
-        <div className="pointer-events-none absolute bottom-3 left-3 rounded-lg bg-ink-950/70 px-2.5 py-1.5 text-[11px] font-medium text-ink-200 backdrop-blur">
+        <div className="pointer-events-none absolute bottom-8 left-3 z-[1000] rounded-lg bg-ink-950/70 px-2.5 py-1.5 text-[11px] font-medium text-ink-200 backdrop-blur">
           {point.lat.toFixed(4)}°, {point.lng.toFixed(4)}°
         </div>
       )}
 
-      {/* Risk zone */}
-      {pin && radiusPx > 0 && (
-        <div
-          className="pointer-events-none absolute rounded-full"
-          style={{
-            left: pin.x,
-            top: pin.y,
-            width: radiusPx * 2,
-            height: radiusPx * 2,
-            transform: 'translate(-50%, -50%)',
-            background: `radial-gradient(circle, ${riskColor}55 0%, ${riskColor}22 50%, transparent 70%)`,
-            border: `1.5px solid ${riskColor}88`,
-            animation: 'pulse-ring 2.5s ease-out infinite',
-          }}
-        />
-      )}
-
-      {/* Pin */}
-      {pin && (
-        <div
-          className="pointer-events-none absolute -translate-x-1/2 -translate-y-full"
-          style={{ left: pin.x, top: pin.y }}
-        >
-          <div className="relative flex flex-col items-center">
-            <span className="absolute -top-1 h-3 w-3 animate-ripple rounded-full bg-brand-400" />
-            <span className="absolute -top-1 h-3 w-3 animate-ripple rounded-full bg-brand-400" style={{ animationDelay: '0.7s' }} />
-            <MapPin className="h-8 w-8 fill-brand-500 text-brand-700 drop-shadow-[0_4px_8px_rgba(3,105,161,0.6)]" strokeWidth={1.5} />
-            <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-brand-700 ring-2 ring-white/60" />
-          </div>
-        </div>
-      )}
-
       {interactive && !point && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="rounded-xl bg-ink-950/70 px-4 py-2.5 text-sm font-medium text-ink-200 backdrop-blur">
-            Click anywhere to drop a pin
+        <div className="pointer-events-none absolute inset-x-0 bottom-8 z-[1000] flex justify-center">
+          <div className="rounded-xl bg-ink-950/75 px-4 py-2.5 text-sm font-medium text-ink-200 backdrop-blur">
+            Click anywhere on the map to drop a pin
           </div>
         </div>
       )}
     </div>
   );
+}
+
+/** Pick a zoom level that fits the risk circle comfortably in the frame. */
+function zoomForRadius(km: number): number {
+  if (km <= 2) return 13;
+  if (km <= 4) return 12;
+  if (km <= 6) return 12;
+  if (km <= 9) return 11;
+  return 10;
 }

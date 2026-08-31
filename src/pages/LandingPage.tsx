@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   MapPin,
   Search,
@@ -12,11 +12,17 @@ import {
   AlertTriangle,
   LifeBuoy,
   Sparkles,
+  Loader2,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import MapView from '@/components/MapView';
-import { geocode } from '@/lib/floodPredictor';
+import {
+  searchPlaces,
+  reverseGeocode,
+  parseCoordinates,
+  type GeocodeResult,
+} from '@/lib/geocode';
 import type { GeoPoint } from '@/lib/types';
 
 interface LandingPageProps {
@@ -36,21 +42,109 @@ export default function LandingPage({ onAssess }: LandingPageProps) {
   const [point, setPoint] = useState<GeoPoint | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<GeocodeResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [openList, setOpenList] = useState(false);
 
-  function handleSearch() {
-    setError('');
-    const result = geocode(query);
-    if (!result) {
-      setError('Enter an address or latitude,longitude to continue.');
+  const abortRef = useRef<AbortController | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  /** Set when a suggestion is chosen, so the effect below does not re-query it. */
+  const skipNextLookup = useRef(false);
+
+  // Debounced autocomplete against Nominatim (its policy asks for <= 1 req/sec).
+  useEffect(() => {
+    if (skipNextLookup.current) {
+      skipNextLookup.current = false;
       return;
     }
-    setPoint(result);
+    const q = query.trim();
+    if (q.length < 3 || parseCoordinates(q)) {
+      setSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      abortRef.current?.abort();
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      setSearching(true);
+      try {
+        const found = await searchPlaces(q, ctrl.signal);
+        setSuggestions(found);
+        setOpenList(found.length > 0);
+        if (found.length === 0) setError('No place matched that search.');
+        else setError('');
+      } catch (err) {
+        if ((err as Error).name !== 'AbortError') {
+          setError('Could not reach the location service. Check your connection.');
+        }
+      } finally {
+        setSearching(false);
+      }
+    }, 450);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  // Close the suggestion list on an outside click.
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpenList(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
+
+  const choose = useCallback((p: GeoPoint, text?: string) => {
+    skipNextLookup.current = true;
+    setPoint(p);
+    setQuery(text ?? p.label);
+    setSuggestions([]);
+    setOpenList(false);
+    setError('');
+  }, []);
+
+  async function handleSearch() {
+    setError('');
+    const q = query.trim();
+    if (!q) {
+      setError('Enter a place name or latitude, longitude to continue.');
+      return;
+    }
+
+    const coords = parseCoordinates(q);
+    if (coords) {
+      const name = await reverseGeocode(coords.lat, coords.lng);
+      choose({ ...coords, label: name }, q);
+      return;
+    }
+
+    // Prefer an already-loaded suggestion; otherwise query now.
+    if (suggestions.length > 0) {
+      choose(suggestions[0]);
+      return;
+    }
+    setSearching(true);
+    try {
+      const found = await searchPlaces(q);
+      if (found.length === 0) {
+        setError('No place matched that search. Try adding a state or country.');
+        return;
+      }
+      choose(found[0]);
+    } catch {
+      setError('Could not reach the location service. Check your connection.');
+    } finally {
+      setSearching(false);
+    }
   }
 
-  function handleMapPick(lat: number, lng: number) {
+  async function handleMapPick(lat: number, lng: number) {
     setError('');
-    setPoint({ lat, lng, label: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
-    setQuery(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    const fallback = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+    choose({ lat, lng, label: fallback }, fallback);
+    const name = await reverseGeocode(lat, lng);
+    setPoint((prev) =>
+      prev && prev.lat === lat && prev.lng === lng ? { ...prev, label: name } : prev,
+    );
   }
 
   function useMyLocation() {
@@ -61,12 +155,14 @@ export default function LandingPage({ onAssess }: LandingPageProps) {
     }
     setLoading(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLoading(false);
+      async (pos) => {
         const { latitude, longitude } = pos.coords;
-        const p: GeoPoint = { lat: latitude, lng: longitude, label: 'My current location' };
-        setPoint(p);
-        setQuery(`${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+        const name = await reverseGeocode(latitude, longitude);
+        setLoading(false);
+        choose(
+          { lat: latitude, lng: longitude, label: name },
+          `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+        );
       },
       () => {
         setLoading(false);
@@ -78,12 +174,12 @@ export default function LandingPage({ onAssess }: LandingPageProps) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    handleSearch();
+    void handleSearch();
   }
 
   function proceed() {
     if (!point) {
-      handleSearch();
+      void handleSearch();
       return;
     }
     onAssess(point);
@@ -122,22 +218,57 @@ export default function LandingPage({ onAssess }: LandingPageProps) {
 
             {/* Input card */}
             <form onSubmit={handleSubmit} className="mt-8 max-w-xl">
-              <div className="card bg-white/95 p-2 backdrop-blur">
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-ink-400" />
-                    <input
-                      type="text"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      placeholder="Enter address or lat, lng (e.g. 26.14, 91.73)"
-                      className="w-full rounded-xl border-0 bg-transparent py-3 pl-10 pr-3 text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
-                    />
+              <div ref={boxRef} className="relative">
+                <div className="card bg-white/95 p-2 backdrop-blur">
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-ink-400" />
+                      <input
+                        type="text"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onFocus={() => suggestions.length > 0 && setOpenList(true)}
+                        autoComplete="off"
+                        placeholder="Search any place, address, or lat, lng"
+                        className="w-full rounded-xl border-0 bg-transparent py-3 pl-10 pr-9 text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-brand-200"
+                      />
+                      {searching && (
+                        <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-brand-500" />
+                      )}
+                    </div>
+                    <button type="submit" className="btn-primary !rounded-xl">
+                      <Search className="h-4 w-4" /> Locate
+                    </button>
                   </div>
-                  <button type="submit" className="btn-primary !rounded-xl">
-                    <Search className="h-4 w-4" /> Locate
-                  </button>
                 </div>
+
+                {/* Live suggestions from OpenStreetMap */}
+                {openList && suggestions.length > 0 && (
+                  <ul className="absolute left-0 right-0 top-full z-[1100] mt-2 max-h-72 overflow-y-auto rounded-2xl border border-white/10 bg-ink-900 py-1.5 shadow-card-lg">
+                    {suggestions.map((s) => (
+                      <li key={`${s.lat},${s.lng},${s.displayName}`}>
+                        <button
+                          type="button"
+                          onClick={() => choose(s)}
+                          className="flex w-full items-start gap-2.5 px-3.5 py-2.5 text-left transition-colors hover:bg-white/5"
+                        >
+                          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-brand-400" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium text-white">
+                              {s.label}
+                            </span>
+                            <span className="block truncate text-xs text-ink-400">
+                              {s.displayName}
+                            </span>
+                          </span>
+                          <span className="shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-ink-400">
+                            {s.kind}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -155,8 +286,7 @@ export default function LandingPage({ onAssess }: LandingPageProps) {
                     key={p.name}
                     type="button"
                     onClick={() => {
-                      setQuery(p.name);
-                      setPoint({ lat: p.lat, lng: p.lng, label: p.name });
+                      choose({ lat: p.lat, lng: p.lng, label: p.name });
                     }}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-ink-200 transition-colors hover:bg-white/10"
                   >
@@ -202,8 +332,8 @@ export default function LandingPage({ onAssess }: LandingPageProps) {
                 className="relative h-[380px] w-full border border-white/10 shadow-card-lg lg:h-[460px]"
               />
               <p className="mt-3 text-center text-xs text-ink-400">
-                This is a prototype map. It can be swapped for Google Maps or Leaflet
-                without changing the rest of the app.
+                Live satellite imagery — click anywhere to pin a location, or switch
+                to street and terrain layers using the control on the map.
               </p>
             </div>
           </div>

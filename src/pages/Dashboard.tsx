@@ -20,6 +20,7 @@ import {
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import MapView from '@/components/MapView';
+import SatelliteCompare from '@/components/SatelliteCompare';
 import RiskGauge from '@/components/RiskGauge';
 import StatCard from '@/components/StatCard';
 import EmergencyContacts from '@/components/EmergencyContacts';
@@ -245,6 +246,9 @@ export default function Dashboard({ point, onBack }: DashboardProps) {
             </div>
           </div>
         </div>
+
+        {/* Historical vs current satellite imagery */}
+        <SatelliteCompare point={point} riskRadiusKm={zone.km} riskColor={zone.color} />
 
         {/* Factors + recommended actions */}
         <div className="grid gap-6 lg:grid-cols-3">
