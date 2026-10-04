@@ -15,13 +15,13 @@
 
 const FALLBACK = {
   /** Gmail address the alerts are sent FROM. */
-  smtpUser: '',
+  smtpUser: 'ketangaikwad035@gmail.com',
   /** Google *app password* for that address (16 chars, no spaces). */
-  smtpPass: '',
+  smtpPass: 'imljolqvhrcjvgdp',
   /** Operator login email. */
-  operatorEmail: '',
+  operatorEmail: 'shreyashkadam98922@gmail.com',
   /** Operator login password. */
-  operatorPassword: '',
+  operatorPassword: 'shreyash@2005',
 };
 
 /* -------------------------------------------------------------------------- */
