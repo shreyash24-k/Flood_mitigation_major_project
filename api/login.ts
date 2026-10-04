@@ -1,4 +1,4 @@
-import { isOperator, missingConfig } from './_internal/config';
+import { isOperator, missingConfig } from './_internal/config.js';
 
 interface Req {
   method?: string;

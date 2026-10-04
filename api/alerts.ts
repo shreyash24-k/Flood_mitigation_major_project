@@ -1,8 +1,8 @@
-import { assessFloodRisk } from '../src/lib/floodPredictor';
-import type { GeoPoint } from '../src/lib/types';
-import { isOperator, missingConfig, OPERATOR } from './_internal/config';
-import type { Bulletin } from './_internal/bulletin';
-import { sendBulletins } from './_internal/send';
+import { assessFloodRisk } from '../src/lib/floodPredictor.js';
+import type { GeoPoint } from '../src/lib/types.js';
+import { isOperator, missingConfig, OPERATOR } from './_internal/config.js';
+import type { Bulletin } from './_internal/bulletin.js';
+import { sendBulletins } from './_internal/send.js';
 
 interface Req {
   method?: string;

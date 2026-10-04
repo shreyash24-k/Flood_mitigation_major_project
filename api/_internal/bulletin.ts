@@ -6,9 +6,9 @@
  * serverless function fast (no image decoding, no extra dependency) and Gmail
  * displays proxied remote images by default, which is where these land.
  */
-import { defaultEmergencyContacts } from '../../src/lib/floodPredictor';
-import type { FloodAssessment, RiskLevel } from '../../src/lib/types';
-import { APP_URL, IMAGERY } from './config';
+import { defaultEmergencyContacts } from '../../src/lib/floodPredictor.js';
+import type { FloodAssessment, RiskLevel } from '../../src/lib/types.js';
+import { APP_URL, IMAGERY } from './config.js';
 
 const GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
 const LAYER_FLOOD = 'VIIRS_SNPP_CorrectedReflectance_BandsM11-I2-I1';

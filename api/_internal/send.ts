@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
-import { SMTP } from './config';
-import { renderHtml, renderText, subjectFor, type Bulletin } from './bulletin';
+import { SMTP } from './config.js';
+import { renderHtml, renderText, subjectFor, type Bulletin } from './bulletin.js';
 
 /** Opens one SMTP connection and sends every bulletin down it. */
 export async function sendBulletins(to: string, bulletins: Bulletin[]): Promise<string[]> {
