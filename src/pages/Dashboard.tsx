@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   MapPin,
@@ -16,6 +16,8 @@ import {
   RefreshCw,
   Printer,
   ShieldAlert,
+  Cpu,
+  Sliders,
 } from 'lucide-react';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -25,8 +27,8 @@ import RiskGauge from '@/components/RiskGauge';
 import StatCard from '@/components/StatCard';
 import EmergencyContacts from '@/components/EmergencyContacts';
 import { EnvironmentalFactors, DataSources } from '@/components/EnvironmentalFactors';
-import { assessFloodRisk, defaultEmergencyContacts } from '@/lib/floodPredictor';
-import type { GeoPoint, RiskLevel } from '@/lib/types';
+import { assessFloodRisk, defaultEmergencyContacts, queryMLBackend } from '@/lib/floodPredictor';
+import type { FloodAssessment, GeoPoint, RiskLevel } from '@/lib/types';
 
 interface DashboardProps {
   point: GeoPoint;
@@ -71,11 +73,42 @@ const WARNING_BANNER: Record<RiskLevel, { text: string; bg: string; border: stri
 
 export default function Dashboard({ point, onBack }: DashboardProps) {
   const [version, setVersion] = useState(0);
-  const assessment = useMemo(() => assessFloodRisk(point), [point, version]);
+  const baseAssessment = useMemo(() => assessFloodRisk(point), [point, version]);
+  const [assessment, setAssessment] = useState<FloodAssessment>(baseAssessment);
+  const [isMLPowered, setIsMLPowered] = useState(false);
   const contacts = useMemo(() => defaultEmergencyContacts(), []);
+
+  const [extraRainfall, setExtraRainfall] = useState(0); // For What-If stress test
+
+  // Sync when point, version, or simulation slider changes
+  useEffect(() => {
+    setAssessment(baseAssessment);
+    setIsMLPowered(false);
+
+    // Call your Python Random Forest backend with base + simulated extra rainfall
+    const simulatedRainfall30d = Math.max(0, baseAssessment.rainfall.mmForecast7d * 4 + extraRainfall * 3);
+
+    queryMLBackend(
+      point,
+      baseAssessment.elevation.meters,
+      baseAssessment.slope,
+      simulatedRainfall30d
+    ).then((mlResult) => {
+      if (mlResult) {
+        setIsMLPowered(true);
+        setAssessment((prev) => ({
+          ...prev,
+          probability: mlResult.probability,
+          riskLevel: mlResult.riskLevel,
+          impact: mlResult.impact,
+          recommendedActions: mlResult.actions.length > 0 ? mlResult.actions : prev.recommendedActions,
+        }));
+      }
+    });
+  }, [baseAssessment, point, version, extraRainfall]);
+
   const warn = WARNING_BANNER[assessment.riskLevel];
   const zone = RISK_RADIUS[assessment.riskLevel];
-
   const assessedDate = new Date(assessment.assessedAt);
 
   return (
@@ -95,6 +128,11 @@ export default function Dashboard({ point, onBack }: DashboardProps) {
             <div>
               <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-ink-400">
                 <MapPin className="h-3.5 w-3.5 text-brand-400" /> Assessment
+                {isMLPowered && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-400 border border-emerald-500/30">
+                    <Cpu className="h-3 w-3" /> Live ML Backend (Random Forest)
+                  </span>
+                )}
               </div>
               <h1 className="font-display text-xl font-bold text-white sm:text-2xl">
                 {assessment.location.label}
@@ -104,7 +142,10 @@ export default function Dashboard({ point, onBack }: DashboardProps) {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setVersion((v) => v + 1)}
+              onClick={() => {
+                setExtraRainfall(0);
+                setVersion((v) => v + 1);
+              }}
               className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-ink-200 transition-colors hover:border-brand-400/40 hover:text-white"
             >
               <RefreshCw className="h-3.5 w-3.5" /> Re-assess
@@ -120,6 +161,48 @@ export default function Dashboard({ point, onBack }: DashboardProps) {
       </div>
 
       <div className="container-page space-y-6 py-6">
+        {/* WHAT-IF STRESS TEST SIMULATION TOOLBAR */}
+        <div className="rounded-2xl border border-brand-500/30 bg-brand-950/40 p-4 shadow-lg backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/20 text-brand-400">
+                <Sliders className="h-4 w-4" />
+              </span>
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-brand-300">
+                  Interactive What-If Simulation
+                </h4>
+                <p className="text-xs text-ink-400">
+                  Test how extreme precipitation stress affects your ML model's prediction in real-time.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-ink-300">
+                Simulated Rain: <strong className="text-white">+{extraRainfall} mm/24h</strong>
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="250"
+                step="25"
+                value={extraRainfall}
+                onChange={(e) => setExtraRainfall(Number(e.target.value))}
+                className="h-2 w-36 sm:w-48 cursor-pointer rounded-lg bg-ink-800 accent-brand-500"
+              />
+              {extraRainfall > 0 && (
+                <button
+                  onClick={() => setExtraRainfall(0)}
+                  className="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-ink-300 hover:text-white"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
         {/* Warning banner */}
         <div className={`flex items-start gap-3 rounded-2xl border ${warn.border} ${warn.bg} px-5 py-4 animate-fade-in`}>
           {assessment.riskLevel === 'low' ? (
@@ -134,6 +217,11 @@ export default function Dashboard({ point, onBack }: DashboardProps) {
             <p className="mt-0.5 flex items-center gap-1.5 text-xs text-ink-400">
               <CalendarClock className="h-3.5 w-3.5" />
               Assessed {assessedDate.toLocaleString()}
+              {extraRainfall > 0 && (
+                <span className="ml-2 font-semibold text-amber-400">
+                  (Simulating +{extraRainfall} mm Cloudburst Event)
+                </span>
+              )}
             </p>
           </div>
         </div>

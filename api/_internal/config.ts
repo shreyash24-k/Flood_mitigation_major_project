@@ -15,9 +15,9 @@
 
 const FALLBACK = {
   /** Gmail address the alerts are sent FROM. */
-  smtpUser: 'ketangaikwad035@gmail.com',
+  smtpUser: 'ketangaikwad2005@gmail.com',
   /** Google *app password* for that address (16 chars, no spaces). */
-  smtpPass: 'imljolqvhrcjvgdp',
+  smtpPass: 'exxlmhxuyczkqkog',
   /** Operator login email. */
   operatorEmail: 'shreyashkadam98922@gmail.com',
   /** Operator login password. */
@@ -30,8 +30,8 @@ export const SMTP = {
   host: 'smtp.gmail.com',
   port: 465,
   secure: true,
-  user: process.env.ALERT_FROM_USER ?? FALLBACK.smtpUser,
-  pass: process.env.ALERT_FROM_PASS ?? FALLBACK.smtpPass,
+  user: process.env.SMTP_USER ?? process.env.ALERT_FROM_USER ?? FALLBACK.smtpUser,
+  pass: process.env.SMTP_PASS ?? process.env.ALERT_FROM_PASS ?? FALLBACK.smtpPass,
 } as const;
 
 /** The single demo account. No database — one hard-coded operator login. */

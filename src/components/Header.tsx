@@ -2,10 +2,11 @@ import { Waves } from 'lucide-react';
 
 interface HeaderProps {
   onHome: () => void;
+  onOperatorLogin?: () => void;
   compact?: boolean;
 }
 
-export default function Header({ onHome, compact = false }: HeaderProps) {
+export default function Header({ onHome, onOperatorLogin, compact = false }: HeaderProps) {
   return (
     <header
       className={`sticky top-0 z-40 border-b border-white/10 bg-ink-950/80 backdrop-blur-xl transition-all ${
@@ -47,12 +48,22 @@ export default function Header({ onHome, compact = false }: HeaderProps) {
           ))}
         </nav>
 
-        <button
-          onClick={onHome}
-          className="btn-primary !px-4 !py-2 !text-xs"
-        >
-          Assess a location
-        </button>
+        <div className="flex items-center gap-2.5">
+          {onOperatorLogin && (
+            <button
+              onClick={onOperatorLogin}
+              className="rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-ink-200 transition-colors hover:border-brand-400/40 hover:text-white"
+            >
+              Operator Portal
+            </button>
+          )}
+          <button
+            onClick={onHome}
+            className="btn-primary !px-4 !py-2 !text-xs"
+          >
+            Assess a location
+          </button>
+        </div>
       </div>
     </header>
   );

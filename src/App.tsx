@@ -7,13 +7,15 @@ import type { GeoPoint } from '@/lib/types';
 
 type View =
   | { name: 'landing' }
+  | { name: 'login' }
   | { name: 'gate' }
   | { name: 'dashboard'; point: GeoPoint };
 
 /**
+ * Deep-linking from email alerts (from commit e644ad6):
  * Alert emails link straight to a location, e.g.
  *   /?lat=18.5204&lng=73.8567&label=Pune
- * so a recipient lands on that assessment instead of the location gate.
+ * so a recipient lands directly on that assessment dashboard.
  */
 function pointFromUrl(): GeoPoint | null {
   const q = new URLSearchParams(window.location.search);
@@ -27,9 +29,13 @@ function pointFromUrl(): GeoPoint | null {
 
 export default function App() {
   const [credentials, setCredentials] = useState<Credentials | null>(null);
-  const [view, setView] = useState<View>({ name: 'gate' });
+  const [view, setView] = useState<View>(() => {
+    const deepLinked = pointFromUrl();
+    return deepLinked ? { name: 'dashboard', point: deepLinked } : { name: 'landing' };
+  });
 
-  if (!credentials) {
+  // 1. Operator Login & Signup View
+  if (view.name === 'login') {
     return (
       <Login
         onAuth={(creds) => {
@@ -37,28 +43,38 @@ export default function App() {
           const deepLinked = pointFromUrl();
           setView(deepLinked ? { name: 'dashboard', point: deepLinked } : { name: 'gate' });
         }}
+        onBack={() => setView({ name: 'landing' })}
       />
     );
   }
 
-  if (view.name === 'gate') {
+  // 2. Location Confirmation & Email Dispatch Gate View
+  if (view.name === 'gate' && credentials) {
     return (
       <LocationGate
         credentials={credentials}
         onContinue={(point) => setView({ name: 'dashboard', point })}
+        onBack={() => setView({ name: 'landing' })}
       />
     );
   }
 
+  // 3. Regular Public Landing Page
   if (view.name === 'landing') {
-    return <LandingPage onAssess={(point) => setView({ name: 'dashboard', point })} />;
+    return (
+      <LandingPage
+        onAssess={(point) => setView({ name: 'dashboard', point })}
+        onOperatorLogin={() => setView({ name: 'login' })}
+      />
+    );
   }
 
+  // 4. Flood Risk Assessment Dashboard
   return (
     <Dashboard
       point={view.point}
       onBack={() => {
-        // Drop the deep-link params so Back doesn't bounce into the dashboard again.
+        // Drop the deep-link params so Back doesn't bounce into the dashboard again
         window.history.replaceState(null, '', window.location.pathname);
         setView({ name: 'landing' });
       }}

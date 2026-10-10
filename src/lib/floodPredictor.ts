@@ -211,3 +211,43 @@ export function defaultEmergencyContacts(): EmergencyContact[] {
 }
 
 // Geocoding now lives in `@/lib/geocode` (OpenStreetMap Nominatim).
+
+export interface MLPredictionResult {
+  probability: number;
+  riskLevel: RiskLevel;
+  impact: RiskImpact;
+  actions: string[];
+}
+
+export async function queryMLBackend(
+  point: GeoPoint,
+  elevation: number,
+  slope: number,
+  rainfall30d: number
+): Promise<MLPredictionResult | null> {
+  try {
+    const res = await fetch('http://localhost:8000/predict/simple', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        lat: point.lat,
+        lng: point.lng,
+        elevation,
+        slope,
+        rainfall_30day: rainfall30d,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.success) return null;
+
+    return {
+      probability: data.probability,
+      riskLevel: data.risk_level as RiskLevel,
+      impact: data.impact as RiskImpact,
+      actions: data.recommended_actions || [],
+    };
+  } catch {
+    return null; // Fallback to local assessment if backend is offline
+  }
+}

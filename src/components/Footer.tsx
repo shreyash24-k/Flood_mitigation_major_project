@@ -49,13 +49,21 @@ export default function Footer() {
         </div>
 
         <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 text-xs text-ink-400 sm:flex-row">
-          <p>© {new Date().getFullYear()} Floodmate. For demonstration & preparedness use.</p>
-          <div className="flex items-center gap-4">
-            <a href="#" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <Github className="h-4 w-4" /> Source
+          <p>© {new Date().getFullYear()} Floodmate. Built for major project viva & disaster preparedness.</p>
+          <div className="flex items-center gap-5">
+            <a
+              href="https://github.com/shreyash24-k/Flood_mitigation_major_project"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 transition-colors hover:text-white"
+            >
+              <Github className="h-4 w-4 text-brand-400" /> GitHub Repository
             </a>
-            <a href="#" className="flex items-center gap-1.5 hover:text-white transition-colors">
-              <Mail className="h-4 w-4" /> Contact
+            <a
+              href="mailto:shreyashkadam98922@gmail.com?subject=Flood%20Mitigation%20Project%20Inquiry"
+              className="flex items-center gap-1.5 transition-colors hover:text-white"
+            >
+              <Mail className="h-4 w-4 text-brand-400" /> shreyashkadam98922@gmail.com
             </a>
           </div>
         </div>

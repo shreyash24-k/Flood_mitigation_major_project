@@ -6,9 +6,12 @@ import {
   CircleCheck,
   Send,
   Crosshair,
+  ArrowLeft,
 } from 'lucide-react';
 import type { GeoPoint } from '@/lib/types';
 import type { Credentials } from '@/pages/Login';
+
+import { reverseGeocode } from '@/lib/geocode';
 
 interface SentAlert {
   label: string;
@@ -22,9 +25,17 @@ interface SentAlert {
 interface Props {
   credentials: Credentials;
   onContinue: (point: GeoPoint) => void;
+  onBack?: () => void;
 }
 
-type Fix = { lat: number; lng: number; accuracy: number };
+type Fix = { lat: number; lng: number; accuracy: number; label?: string };
+
+const PRESET_JURISDICTIONS = [
+  { name: 'Mumbai (Coastal)', lat: 19.076, lng: 72.8777 },
+  { name: 'Guwahati (Brahmaputra)', lat: 26.1445, lng: 91.7362 },
+  { name: 'Patna (Ganges Basin)', lat: 25.5941, lng: 85.1376 },
+  { name: 'Kolkata (Hooghly Delta)', lat: 22.5726, lng: 88.3639 },
+];
 
 const RISK_TONE: Record<string, string> = {
   low: 'text-emerald-300',
@@ -94,7 +105,7 @@ export default function LocationGate({ credentials, onContinue }: Props) {
   }
 
   const point: GeoPoint | null = fix
-    ? { lat: fix.lat, lng: fix.lng, label: `${fix.lat.toFixed(4)}, ${fix.lng.toFixed(4)}` }
+    ? { lat: fix.lat, lng: fix.lng, label: fix.label || `${fix.lat.toFixed(4)}, ${fix.lng.toFixed(4)}` }
     : null;
 
   return (
@@ -105,7 +116,19 @@ export default function LocationGate({ credentials, onContinue }: Props) {
         <div className="absolute inset-0 bg-water-grid opacity-40" />
       </div>
 
-      <div className="container-page relative flex min-h-screen items-center justify-center py-14">
+      {/* Top Left Return Button */}
+      {onBack && (
+        <div className="relative z-50 container-page pt-6">
+          <button
+            onClick={onBack}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-semibold text-ink-200 backdrop-blur transition-colors hover:border-brand-400/40 hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back to Assessment
+          </button>
+        </div>
+      )}
+
+      <div className="container-page relative flex min-h-[calc(100vh-80px)] items-center justify-center py-10">
         <div className="w-full max-w-lg animate-fade-up">
           <div className="mb-8 text-center">
             <span className="chip border border-brand-400/30 bg-brand-600/10 text-brand-200">
@@ -128,7 +151,7 @@ export default function LocationGate({ credentials, onContinue }: Props) {
                   {locating ? (
                     <>
                       <LoaderCircle className="h-4 w-4 animate-spin" />
-                      Waiting for the browser…
+                      Acquiring GPS fix…
                     </>
                   ) : (
                     <>
@@ -137,9 +160,35 @@ export default function LocationGate({ credentials, onContinue }: Props) {
                     </>
                   )}
                 </button>
-                <p className="mt-4 text-center text-xs leading-relaxed text-ink-500">
-                  Your browser will ask for permission. Accept it to get a GPS-grade fix.
-                </p>
+
+                <div className="my-5 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-white/10" />
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-400">
+                    Or select jurisdiction preset
+                  </span>
+                  <div className="h-px flex-1 bg-white/10" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  {PRESET_JURISDICTIONS.map((p) => (
+                    <button
+                      key={p.name}
+                      type="button"
+                      onClick={() =>
+                        setFix({
+                          lat: p.lat,
+                          lng: p.lng,
+                          accuracy: 15,
+                          label: p.name,
+                        })
+                      }
+                      className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-left text-xs font-medium text-ink-200 transition-all hover:border-brand-400/40 hover:bg-white/10 hover:text-white"
+                    >
+                      <div className="font-semibold text-white">{p.name.split(' ')[0]}</div>
+                      <div className="text-[10px] text-ink-400">{p.lat}, {p.lng}</div>
+                    </button>
+                  ))}
+                </div>
               </>
             ) : (
               <>
