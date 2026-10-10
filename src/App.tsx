@@ -49,7 +49,19 @@ export default function App() {
   }
 
   // 2. Location Confirmation & Email Dispatch Gate View
-  if (view.name === 'gate' && credentials) {
+  if (view.name === 'gate') {
+    if (!credentials) {
+      return (
+        <Login
+          onAuth={(creds) => {
+            setCredentials(creds);
+            const deepLinked = pointFromUrl();
+            setView(deepLinked ? { name: 'dashboard', point: deepLinked } : { name: 'gate' });
+          }}
+          onBack={() => setView({ name: 'landing' })}
+        />
+      );
+    }
     return (
       <LocationGate
         credentials={credentials}
@@ -70,14 +82,24 @@ export default function App() {
   }
 
   // 4. Flood Risk Assessment Dashboard
+  if (view.name === 'dashboard' && 'point' in view && view.point) {
+    return (
+      <Dashboard
+        point={view.point}
+        onBack={() => {
+          // Drop the deep-link params so Back doesn't bounce into the dashboard again
+          window.history.replaceState(null, '', window.location.pathname);
+          setView({ name: 'landing' });
+        }}
+      />
+    );
+  }
+
+  // Fallback to landing page to prevent any white-screen crash
   return (
-    <Dashboard
-      point={view.point}
-      onBack={() => {
-        // Drop the deep-link params so Back doesn't bounce into the dashboard again
-        window.history.replaceState(null, '', window.location.pathname);
-        setView({ name: 'landing' });
-      }}
+    <LandingPage
+      onAssess={(point) => setView({ name: 'dashboard', point })}
+      onOperatorLogin={() => setView({ name: 'login' })}
     />
   );
 }

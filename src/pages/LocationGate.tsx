@@ -49,7 +49,7 @@ const RISK_TONE: Record<string, string> = {
  * Step two: ask the browser for a precise fix, then let the operator confirm
  * before anything is dispatched. Nothing is sent until they press the button.
  */
-export default function LocationGate({ credentials, onContinue }: Props) {
+export default function LocationGate({ credentials, onContinue, onBack }: Props) {
   const [fix, setFix] = useState<Fix | null>(null);
   const [locating, setLocating] = useState(false);
   const [sending, setSending] = useState(false);
